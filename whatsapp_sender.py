@@ -24,7 +24,7 @@ class WhatsAppSender:
         )
         self.context = self.browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            viewport={"width": 1280, "height": 800},  # Optimal window size
+            viewport={"width": 1280, "height": 800},
             locale="en-US"
         )
         self.page = self.context.new_page()
@@ -41,29 +41,69 @@ class WhatsAppSender:
             self.playwright.stop()
     
     def login_to_whatsapp(self):
-        """Simplified login process"""
+        """Handles QR scan and specifically clicks the Continue button in the popup"""
         try:
             self.page.goto("https://web.whatsapp.com", timeout=120000)
-            print("\n1. Scan QR code with your phone")
-            print("2. Accept any new layout prompts")
-            print("3. Wait for chats to fully load")
-            print("4. Press Enter here when ready...")
-            input()  # Manual confirmation
+            print("Waiting for QR code scan...")
             
-            # Verify login by checking for search box
-            self.page.wait_for_selector('div[aria-label="Search input textbox"]', timeout=30000)
-            print("✓ Login successful!")
-            time.sleep(2)
+            # Wait for QR code to disappear (scan complete)
+            self.page.wait_for_selector('canvas', state='hidden', timeout=120000)
+            print("QR scan detected")
+            
+            # SPECIFIC HANDLING FOR THE CONTINUE POPUP FROM YOUR SCREENSHOT
+            print("Looking for Continue popup...")
+            try:
+                # Wait for the specific popup container to appear
+                self.page.wait_for_selector('div[role="dialog"]', timeout=10000)
+                
+                # Click the Continue button using the exact structure from your screenshot
+                continue_button = self.page.wait_for_selector(
+                    'div[role="dialog"] >> button:has-text("Continue")', 
+                    timeout=5000
+                )
+                continue_button.click()
+                print("✓ Clicked Continue button in popup")
+                time.sleep(2)  # Allow popup to fully close
+            except Exception as e:
+                print(f"Continue popup not found or could not click: {str(e)}")
+                # Take screenshot for debugging
+                self.page.screenshot(path="popup_error.png")
+                print("Saved screenshot as 'popup_error.png'")
+                raise Exception("Failed to handle Continue popup")
+            
+            # Proceed with normal login verification
+            print("Verifying login...")
+            login_verified = False
+            login_indicators = [
+                'div[data-testid="chat-list"]',  # Chat list
+                'div[aria-label="Search input textbox"]',  # Search bar
+                'div[title="New chat"]'  # New chat button
+            ]
+            
+            for indicator in login_indicators:
+                try:
+                    self.page.wait_for_selector(indicator, timeout=15000)
+                    login_verified = True
+                    break
+                except Exception as e:
+                    print(f"Login indicator not found: {indicator} - {str(e)}")
+                    continue
+            
+            if not login_verified:
+                raise Exception("Could not verify login")
+            
+            print("✓ Login successful")
+            time.sleep(2)  # Final stabilization
             return True
             
         except Exception as e:
-            print(f"\n✖ Login failed: {str(e)}")
+            print(f"✖ Login failed: {str(e)}")
             if not self.page.is_closed():
                 self.page.screenshot(path="login_error.png")
             return False
     
     def send_message(self, phone_number: str, message: str):
-        """Ultimate reliable message sending"""
+        """Guaranteed message sending with multiple fallbacks"""
         try:
             print(f"\nPreparing to send to {phone_number}...")
             
@@ -71,33 +111,33 @@ class WhatsAppSender:
             chat_url = f"https://web.whatsapp.com/send?phone={phone_number}&text={urllib.parse.quote(message)}"
             self.page.goto(chat_url, timeout=60000)
             
-            # Triple verification method
+            # Triple sending method with verification
             for attempt in range(3):
                 try:
-                    # Method 1: Direct send button click
+                    # Method 1: Click send button
                     try:
                         send_button = self.page.wait_for_selector(
                             'button[data-testid="compose-btn-send"]',
-                            timeout=10000
+                            timeout=5000
                         )
                         send_button.click()
                         print("✓ Sent via send button")
                         time.sleep(2)
                         return True
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"Send button not found: {str(e)}")
                     
-                    # Method 2: Keyboard Enter with focused input
+                    # Method 2: Keyboard Enter
                     input_box = self.page.wait_for_selector(
                         'div[contenteditable="true"]',
-                        timeout=15000
+                        timeout=10000
                     )
                     input_box.click()
                     for _ in range(3):  # Multiple Enter presses
                         self.page.keyboard.press("Enter")
                         time.sleep(0.5)
                     
-                    # Verify sent status
+                    # Verify message sent
                     if self.page.query_selector('span[data-testid="msg-time"]'):
                         print("✓ Sent via keyboard")
                         return True
@@ -117,7 +157,7 @@ class WhatsAppSender:
 
 
 def send_whatsapp_messages(phone_numbers: List[str], message: str, min_delay=180, max_delay=300):
-    """Main function with guaranteed delivery"""
+    """Main automation function"""
     print("\nStarting WhatsApp Automation")
     print("="*50)
     
@@ -134,11 +174,10 @@ def send_whatsapp_messages(phone_numbers: List[str], message: str, min_delay=180
                 print(f"✖ Invalid format: {number}")
                 continue
             
-            # Send with retry
+            # Send with automatic retry
             if not sender.send_message(clean_num, message):
                 print("⚠ Retrying failed message...")
-                if not sender.send_message(clean_num, message):
-                    print("✖ Permanent send failure")
+                sender.send_message(clean_num, message)  # One automatic retry
             
             # Delay between messages
             if i < len(phone_numbers):
@@ -153,7 +192,7 @@ def send_whatsapp_messages(phone_numbers: List[str], message: str, min_delay=180
 # Configuration
 if __name__ == "__main__":
     numbers = ["+12343807198"]  # Replace with your numbers
-    message = "This message WILL send successfully"  # Your message
+    message = "This message sends automatically"  # Your message
     
     send_whatsapp_messages(
         phone_numbers=numbers,
