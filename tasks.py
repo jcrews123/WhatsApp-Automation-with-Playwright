@@ -1,15 +1,12 @@
 from typing import List, Dict, Any
-from whatsapp_sender import send_whatsapp_messages
+from whatsapp_sender import send_whatsapp_messages, numbers as whatsapp_numbers
 import time
 import random
 
 def get_phone_numbers() -> List[str]:
-    """Get the list of phone numbers to message"""
-    # REPLACE THESE WITH YOUR ACTUAL PHONE NUMBERS
-    # Format: +[country code][number], e.g., +1234567890
-    return [
-        "+12343807198",
-    ]
+    """Get the list of phone numbers to message from whatsapp_sender.py"""
+    # Using numbers from whatsapp_sender.py as the single source
+    return whatsapp_numbers
 
 def get_message_templates() -> Dict[str, Any]:
     """Get different message templates and configuration"""
