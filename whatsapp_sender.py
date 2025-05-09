@@ -32,14 +32,15 @@ class WhatsAppSender:
         self.browser = self.playwright.chromium.launch(
             headless=self.headless,
             args=[
+                "--start-maximized",
+                "--window-position=0,0",
                 "--disable-blink-features=AutomationControlled",
-                "--start-maximized"
             ],
             timeout=60000
         )
         self.context = self.browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            viewport={"width": 1280, "height": 800},
+            viewport=None,  # Maximize the viewport
             locale="en-US"
         )
         self.page = self.context.new_page()
@@ -148,15 +149,26 @@ class WhatsAppSender:
                         timeout=10000
                     )
                     input_box.click()
-                    for _ in range(3):  # Multiple Enter presses
+                    # Try sending with Enter and verify after each press
+                    for i in range(3):  # Try Enter up to 3 times
                         self.page.keyboard.press("Enter")
-                        time.sleep(0.5)
+                        time.sleep(0.5) # Brief pause after Enter
+
+                        # Try to verify message sent status
+                        try:
+                            # Wait a bit for the message status indicator to appear
+                            self.page.wait_for_selector('span[data-testid="msg-time"]', timeout=2000) # 2 second timeout
+                            print(f"✓ Sent via keyboard (verified after Enter press {i+1})")
+                            return True # Successfully sent and verified
+                        except Exception:
+                            # Verification failed for this Enter press, try next or loop ends
+                            if i == 2: # Last Enter press
+                                print("Keyboard Enter presses completed, but 'msg-time' indicator not found quickly.")
+                            pass # Continue to next Enter or let the attempt fail if all Enter presses don't verify
                     
-                    # Verify message sent
-                    if self.page.query_selector('span[data-testid="msg-time"]'):
-                        print("✓ Sent via keyboard")
-                        return True
-                        
+                    # If loop completes, it means all Enter presses failed to verify quickly.
+                    # The current attempt (within the outer `for attempt in range(3)`) will be considered failed for keyboard method.
+                                        
                 except Exception as e:
                     print(f"Attempt {attempt+1} failed: {str(e)}")
                     time.sleep(2)
@@ -193,9 +205,9 @@ def send_whatsapp_messages(students: List[Student], message_template: str, min_d
             print(f"Sending to {student.name}: '{personalized_message}'")
 
             # Send with automatic retry
-            if not sender.send_message(clean_num, personalized_message):
-                print(f"⚠ Retrying failed message for {student.name}...")
-                sender.send_message(clean_num, personalized_message)  # One automatic retry
+            # The sender.send_message method has its own internal retries.
+            # We call it once here and rely on its internal mechanisms.
+            sender.send_message(clean_num, personalized_message)
             
             # Delay between messages
             if i < len(students):
