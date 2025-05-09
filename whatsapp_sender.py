@@ -3,6 +3,31 @@ import random
 import urllib.parse
 from playwright.sync_api import sync_playwright
 from typing import List
+from dataclasses import dataclass
+
+@dataclass
+class Student:
+    name: str
+    phone_number: str
+
+# New functions to provide data
+def get_students_data() -> List[Student]:
+    """Returns the list of students to message."""
+    # EDIT THIS LIST WITH YOUR STUDENT DATA
+    return [
+        Student(name="Jaden Test", phone_number="+12343807198"), # Example student
+        #Student(name="Bob Example", phone_number="+19876543210")  # Another example
+    ]
+
+def get_message_templates_data() -> List[str]:
+    """Returns the list of message templates."""
+    # EDIT THIS LIST WITH YOUR MESSAGE TEMPLATES
+    # Ensure messages include {name} for personalization
+    return [
+        "Hello {name}! This is an automated message from WhatsApp Sender.",
+        "Hi {name}, hope you're having a great day! This is a test.",
+        "Hey {name}, just a friendly automated check-in!"
+    ]
 
 class WhatsAppSender:
     def __init__(self, headless: bool = False):
@@ -156,31 +181,47 @@ class WhatsAppSender:
             return False
 
 
-def send_whatsapp_messages(phone_numbers: List[str], message: str, min_delay=180, max_delay=300):
+def send_whatsapp_messages(min_delay=180, max_delay=300):
     """Main automation function"""
     print("\nStarting WhatsApp Automation")
     print("="*50)
-    
+
+    # Get data from internal functions
+    students = get_students_data()
+    messages = get_message_templates_data()
+
+    if not students:
+        print("Error: No students found in whatsapp_sender.py.")
+        return
+    if not messages:
+        print("Error: No message templates found in whatsapp_sender.py.")
+        return
+
     with WhatsAppSender(headless=False) as sender:
         if not sender.login_to_whatsapp():
             return
         
-        for i, number in enumerate(phone_numbers, 1):
-            print(f"\nProcessing {i}/{len(phone_numbers)}: {number}")
+        for i, student in enumerate(students, 1):
+            print(f"\nProcessing {i}/{len(students)}: {student.name} ({student.phone_number})")
             
             # Clean and validate number
-            clean_num = ''.join(c for c in number if c == '+' or c.isdigit())
+            clean_num = ''.join(c for c in student.phone_number if c == '+' or c.isdigit())
             if not clean_num.startswith('+') or len(clean_num) < 10:
-                print(f"✖ Invalid format: {number}")
+                print(f"✖ Invalid format: {student.phone_number}")
                 continue
             
+            # Randomly select a message and format it
+            message_template = random.choice(messages)
+            message_to_send = message_template.format(name=student.name)
+            print(f"Selected message for {student.name}: '{message_to_send}'")
+
             # Send with automatic retry
-            if not sender.send_message(clean_num, message):
+            if not sender.send_message(clean_num, message_to_send):
                 print("⚠ Retrying failed message...")
-                sender.send_message(clean_num, message)  # One automatic retry
+                sender.send_message(clean_num, message_to_send)  # One automatic retry
             
             # Delay between messages
-            if i < len(phone_numbers):
+            if i < len(students):
                 delay = random.randint(min_delay, max_delay)
                 print(f"\nWaiting {delay//60}m {delay%60}s before next...")
                 time.sleep(delay)
@@ -191,12 +232,8 @@ def send_whatsapp_messages(phone_numbers: List[str], message: str, min_delay=180
 
 # Configuration
 if __name__ == "__main__":
-    numbers = ["+12343807198"]  # Replace with your numbers
-    message = "This message sends automatically"  # Your message
-    
+    # students and messages are now fetched internally by send_whatsapp_messages
     send_whatsapp_messages(
-        phone_numbers=numbers,
-        message=message,
         min_delay=180,  # 3 min minimum delay
         max_delay=300    # 5 min maximum delay
     )
