@@ -10,8 +10,8 @@ python whatsapp_sender.py
 
 TO DO:
 need to have consistant cookies for logging in.
-use multiple numbers and should not stop.
+X use multiple numbers and should not stop.
 have an array of messages same as array of numbers.
-change numbers to contacts.
-contacts need number and first name
-customizable messages.
+X change numbers to contacts. 
+X contacts need number and first name
+X customizable messages.

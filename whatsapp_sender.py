@@ -3,9 +3,21 @@ import random
 import urllib.parse
 from playwright.sync_api import sync_playwright
 from typing import List
-import os
 
-WHATSAPP_SESSION_PATH = "whatsapp_session.json"
+# Define Student class
+class Student:
+    def __init__(self, name: str, phone_number: str):
+        self.name = name
+        self.phone_number = phone_number
+
+    def __repr__(self):
+        return f"Student(name='{self.name}', phone_number='{self.phone_number}')"
+
+# Define default students globally
+DEFAULT_STUDENTS: List[Student] = [
+    Student(name="Jaden", phone_number="+12343807198") # Default student
+    # Add other default students here if needed
+]
 
 class WhatsAppSender:
     def __init__(self, headless: bool = False):
@@ -14,10 +26,8 @@ class WhatsAppSender:
         self.browser = None
         self.context = None
         self.page = None
-        print(f"INFO: WhatsAppSender initialized. Session will be stored at: {os.path.abspath(WHATSAPP_SESSION_PATH)}")
         
     def __enter__(self):
-        print("INFO: Entering WhatsAppSender context...")
         self.playwright = sync_playwright().start()
         self.browser = self.playwright.chromium.launch(
             headless=self.headless,
@@ -27,41 +37,15 @@ class WhatsAppSender:
             ],
             timeout=60000
         )
-        
-        storage_state_to_load = None
-        if os.path.exists(WHATSAPP_SESSION_PATH):
-            print(f"INFO: Session file FOUND at {WHATSAPP_SESSION_PATH}. Attempting to load it.")
-            storage_state_to_load = WHATSAPP_SESSION_PATH
-        else:
-            print(f"INFO: Session file NOT found at {WHATSAPP_SESSION_PATH}. A new session will require QR scan.")
-            
         self.context = self.browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
             viewport={"width": 1280, "height": 800},
-            locale="en-US",
-            storage_state=storage_state_to_load
+            locale="en-US"
         )
-        
         self.page = self.context.new_page()
-        print("INFO: New page created.")
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        print("INFO: Exiting WhatsAppSender context...")
-        if self.context:
-            try:
-                print(f"INFO: Attempting to save session state to {WHATSAPP_SESSION_PATH}...")
-                self.context.storage_state(path=WHATSAPP_SESSION_PATH)
-                print(f"✓ Session state successfully saved to {WHATSAPP_SESSION_PATH}")
-            except Exception as e:
-                print(f"✖ Error saving session state: {str(e)}")
-                if self.page and not self.page.is_closed():
-                    try: 
-                        self.page.screenshot(path="error_saving_session.png")
-                        print("INFO: Screenshot 'error_saving_session.png' taken.")
-                    except Exception as se:
-                        print(f"CRITICAL: Failed to take screenshot during session save error: {se}")
-
         if self.page and not self.page.is_closed():
             self.page.close()
         if self.context:
@@ -70,108 +54,79 @@ class WhatsAppSender:
             self.browser.close()
         if self.playwright:
             self.playwright.stop()
-        print("INFO: Resources closed.")
-
-    def _handle_fresh_look_popup(self):
-        """Specifically handles the 'A fresh look for WhatsApp Web' popup"""
-        print("INFO: Checking for 'Fresh Look' popup...")
-        
-        # Try multiple selectors for the Continue button
-        selectors = [
-            "div[role='dialog'] button >> text=Continue",  # Most specific
-            "button:has-text('Continue')",                # More general
-            "button >> text=Continue",                     # Most general
-            "div[role='button'] >> text=Continue"          # Alternative
-        ]
-        
-        for selector in selectors:
-            try:
-                print(f"INFO: Trying selector: {selector}")
-                if self.page.is_visible(selector, timeout=5000):
-                    print(f"INFO: Found 'Continue' button with selector: {selector}")
-                    # Click with multiple methods for reliability
-                    try:
-                        self.page.click(selector, timeout=5000)
-                        print("✓ Clicked 'Continue' button (method 1)")
-                        return True
-                    except:
-                        self.page.locator(selector).click(timeout=5000)
-                        print("✓ Clicked 'Continue' button (method 2)")
-                        return True
-            except Exception as e:
-                print(f"DEBUG: Continue button not found with selector {selector}: {str(e)}")
-                continue
-                
-        print("INFO: 'Fresh Look' popup not found or not clickable")
-        return False
-
+    
     def login_to_whatsapp(self):
-        print("\nINFO: Starting login_to_whatsapp process...")
+        """Handles QR scan and specifically clicks the Continue button in the popup"""
         try:
-            self.page.goto("https://web.whatsapp.com", timeout=120000, wait_until="domcontentloaded")
-            print("INFO: Navigated to WhatsApp Web. Waiting for page to settle...")
+            self.page.goto("https://web.whatsapp.com", timeout=180000)
+            print("Waiting for QR code scan...")
             
-            # Initial wait for page to load
-            self.page.wait_for_timeout(10000)
-
-            # Check for existing session first
+            # Wait for QR code to disappear (scan complete)
+            self.page.wait_for_selector('canvas', state='hidden', timeout=180000)
+            print("QR scan detected")
+            
+            # SPECIFIC HANDLING FOR THE CONTINUE POPUP FROM YOUR SCREENSHOT
+            print("Looking for Continue popup...")
             try:
-                self.page.wait_for_selector('div[data-testid="chat-list"]', timeout=10000)
-                print("✓ Login successful: Chat list found (existing session).")
-                return True
-            except:
-                print("INFO: No existing session found, proceeding to QR scan flow")
-
-            # QR Code Scan Flow
-            qr_selector = 'canvas[aria-label="Scan me!"]'
-            try:
-                print("INFO: Waiting for QR code to appear...")
-                self.page.wait_for_selector(qr_selector, timeout=60000)
-                print("INFO: QR code visible. Please scan with your phone...")
+                # Wait for the specific popup container to appear
+                self.page.wait_for_selector('div[role="dialog"]', timeout=10000)
                 
-                # Wait for QR code to disappear (scan completed)
-                self.page.wait_for_selector(qr_selector, state="hidden", timeout=120000)
-                print("INFO: QR scan detected (QR code disappeared).")
-                
-                # Explicit wait for the fresh look popup
-                print("INFO: Waiting for 'Fresh Look' popup...")
-                self.page.wait_for_timeout(5000)  # Give it time to appear
-                
-                # Handle the popup with retries
-                for attempt in range(3):
-                    if self._handle_fresh_look_popup():
-                        print("✓ 'Fresh Look' popup handled successfully")
-                        break
-                    print(f"INFO: Popup not found, attempt {attempt + 1}/3")
-                    self.page.wait_for_timeout(3000)
-                
-                # Final verification
-                self.page.wait_for_selector('div[data-testid="chat-list"]', timeout=15000)
-                print("✓ Login verified with chat list")
-                return True
-                
+                # Click the Continue button using the exact structure from your screenshot
+                continue_button = self.page.wait_for_selector(
+                    'div[role="dialog"] >> button:has-text("Continue")', 
+                    timeout=5000
+                )
+                continue_button.click()
+                print("✓ Clicked Continue button in popup")
+                time.sleep(2)  # Allow popup to fully close
             except Exception as e:
-                print(f"✖ Error during QR scan process: {str(e)}")
-                self.page.screenshot(path="error_qr_scan.png")
-                raise
-
+                print(f"Continue popup not found or could not click: {str(e)}")
+                # Take screenshot for debugging
+                self.page.screenshot(path="popup_error.png")
+                print("Saved screenshot as 'popup_error.png'")
+                raise Exception("Failed to handle Continue popup")
+            
+            # Proceed with normal login verification
+            print("Verifying login...")
+            login_verified = False
+            login_indicators = [
+                'div[data-testid="chat-list"]',  # Chat list
+                'div[aria-label="Search input textbox"]',  # Search bar
+                'div[title="New chat"]'  # New chat button
+            ]
+            
+            for indicator in login_indicators:
+                try:
+                    self.page.wait_for_selector(indicator, timeout=30000)
+                    login_verified = True
+                    break
+                except Exception as e:
+                    print(f"Login indicator not found: {indicator} - {str(e)}")
+                    continue
+            
+            if not login_verified:
+                raise Exception("Could not verify login")
+            
+            print("✓ Login successful")
+            time.sleep(2)  # Final stabilization
+            return True
+            
         except Exception as e:
             print(f"✖ Login failed: {str(e)}")
             if not self.page.is_closed():
-                self.page.screenshot(path="error_login_failed.png")
+                self.page.screenshot(path="login_error.png")
             return False
-
+    
     def send_message(self, phone_number: str, message: str):
-        """Sends message with multiple fallback methods"""
+        """Guaranteed message sending with multiple fallbacks"""
         try:
             print(f"\nPreparing to send to {phone_number}...")
+            
+            # Load chat with pre-filled message
             chat_url = f"https://web.whatsapp.com/send?phone={phone_number}&text={urllib.parse.quote(message)}"
             self.page.goto(chat_url, timeout=60000)
             
-            # Wait for chat to load
-            self.page.wait_for_selector('div[contenteditable="true"]', timeout=15000)
-            
-            # Try multiple sending methods
+            # Triple sending method with verification
             for attempt in range(3):
                 try:
                     # Method 1: Click send button
@@ -184,15 +139,18 @@ class WhatsAppSender:
                         print("✓ Sent via send button")
                         time.sleep(2)
                         return True
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"Send button not found: {str(e)}")
                     
                     # Method 2: Keyboard Enter
-                    input_box = self.page.query_selector('div[contenteditable="true"]')
+                    input_box = self.page.wait_for_selector(
+                        'div[contenteditable="true"]',
+                        timeout=10000
+                    )
                     input_box.click()
-                    self.page.keyboard.press("Enter")
-                    time.sleep(1)
-                    self.page.keyboard.press("Enter")
+                    for _ in range(3):  # Multiple Enter presses
+                        self.page.keyboard.press("Enter")
+                        time.sleep(0.5)
                     
                     # Verify message sent
                     if self.page.query_selector('span[data-testid="msg-time"]'):
@@ -213,8 +171,8 @@ class WhatsAppSender:
             return False
 
 
-def send_whatsapp_messages(phone_numbers: List[str], message: str, min_delay=180, max_delay=300):
-    """Main automation function"""
+def send_whatsapp_messages(students: List[Student], message_template: str, min_delay=180, max_delay=300):
+    """Main automation function, sends personalized messages."""
     print("\nStarting WhatsApp Automation")
     print("="*50)
     
@@ -222,18 +180,25 @@ def send_whatsapp_messages(phone_numbers: List[str], message: str, min_delay=180
         if not sender.login_to_whatsapp():
             return
         
-        for i, number in enumerate(phone_numbers, 1):
-            print(f"\nProcessing {i}/{len(phone_numbers)}: {number}")
-            clean_num = ''.join(c for c in number if c == '+' or c.isdigit())
+        for i, student in enumerate(students, 1):
+            print(f"\nProcessing {i}/{len(students)}: Student {student.name} ({student.phone_number})")
+            
+            clean_num = student.phone_number 
             if not clean_num.startswith('+') or len(clean_num) < 10:
-                print(f"✖ Invalid format: {number}")
+                print(f"✖ Invalid format for {student.name}: {clean_num}")
                 continue
             
-            if not sender.send_message(clean_num, message):
-                print("⚠ Retrying failed message...")
-                sender.send_message(clean_num, message)
+            # Personalize the message
+            personalized_message = message_template.format(name=student.name)
+            print(f"Sending to {student.name}: '{personalized_message}'")
+
+            # Send with automatic retry
+            if not sender.send_message(clean_num, personalized_message):
+                print(f"⚠ Retrying failed message for {student.name}...")
+                sender.send_message(clean_num, personalized_message)  # One automatic retry
             
-            if i < len(phone_numbers):
+            # Delay between messages
+            if i < len(students):
                 delay = random.randint(min_delay, max_delay)
                 print(f"\nWaiting {delay//60}m {delay%60}s before next...")
                 time.sleep(delay)
@@ -243,13 +208,29 @@ def send_whatsapp_messages(phone_numbers: List[str], message: str, min_delay=180
 
 
 # Configuration
-numbers = ["+12343807198"]  # Replace with your numbers
-message = "This message sends automatically"
-
 if __name__ == "__main__":
+    # Import necessary components from tasks.py and random module
+    from tasks import get_message_templates
+    import random
+
+    students_to_message = DEFAULT_STUDENTS
+    
+    # Get message configurations from tasks.py
+    templates_config = get_message_templates()
+    first_admission_config = templates_config.get("first_admission")
+    
+    if first_admission_config and first_admission_config.get("message_options"):
+        # Randomly select a message template from the options in tasks.py
+        chosen_template = random.choice(first_admission_config["message_options"])
+        print(f"Using randomly selected template from tasks.py: '{chosen_template}'")
+    else:
+        # Fallback to a default template if tasks.py configuration is not as expected
+        print("Warning: Could not find message_options in tasks.py. Using a default template.")
+        chosen_template = "Hello {name}! This is a default message."
+    
     send_whatsapp_messages(
-        phone_numbers=numbers,
-        message=message,
-        min_delay=180,
-        max_delay=300
+        students=students_to_message,
+        message_template=chosen_template, 
+        min_delay=180,  # 3 min minimum delay
+        max_delay=300    # 5 min maximum delay
     )
