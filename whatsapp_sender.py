@@ -4,21 +4,6 @@ import urllib.parse
 from playwright.sync_api import sync_playwright
 from typing import List
 
-# Define Student class
-class Student:
-    def __init__(self, name: str, phone_number: str):
-        self.name = name
-        self.phone_number = phone_number
-
-    def __repr__(self):
-        return f"Student(name='{self.name}', phone_number='{self.phone_number}')"
-
-# Define default students globally
-DEFAULT_STUDENTS: List[Student] = [
-    Student(name="Jaden", phone_number="+12343807198"), # Default student
-    # Add other default students here if needed
-]
-
 class WhatsAppSender:
     def __init__(self, headless: bool = False):
         self.headless = headless
@@ -58,11 +43,11 @@ class WhatsAppSender:
     def login_to_whatsapp(self):
         """Handles QR scan and specifically clicks the Continue button in the popup"""
         try:
-            self.page.goto("https://web.whatsapp.com", timeout=180000)
+            self.page.goto("https://web.whatsapp.com", timeout=120000)
             print("Waiting for QR code scan...")
             
             # Wait for QR code to disappear (scan complete)
-            self.page.wait_for_selector('canvas', state='hidden', timeout=180000)
+            self.page.wait_for_selector('canvas', state='hidden', timeout=120000)
             print("QR scan detected")
             
             # SPECIFIC HANDLING FOR THE CONTINUE POPUP FROM YOUR SCREENSHOT
@@ -97,7 +82,7 @@ class WhatsAppSender:
             
             for indicator in login_indicators:
                 try:
-                    self.page.wait_for_selector(indicator, timeout=30000)
+                    self.page.wait_for_selector(indicator, timeout=15000)
                     login_verified = True
                     break
                 except Exception as e:
@@ -171,8 +156,8 @@ class WhatsAppSender:
             return False
 
 
-def send_whatsapp_messages(students: List[Student], message_template: str, min_delay=180, max_delay=300):
-    """Main automation function, sends personalized messages."""
+def send_whatsapp_messages(phone_numbers: List[str], message: str, min_delay=180, max_delay=300):
+    """Main automation function"""
     print("\nStarting WhatsApp Automation")
     print("="*50)
     
@@ -180,25 +165,22 @@ def send_whatsapp_messages(students: List[Student], message_template: str, min_d
         if not sender.login_to_whatsapp():
             return
         
-        for i, student in enumerate(students, 1):
-            print(f"\nProcessing {i}/{len(students)}: Student {student.name} ({student.phone_number})")
+        for i, number in enumerate(phone_numbers, 1):
+            print(f"\nProcessing {i}/{len(phone_numbers)}: {number}")
             
-            clean_num = student.phone_number 
+            # Clean and validate number
+            clean_num = ''.join(c for c in number if c == '+' or c.isdigit())
             if not clean_num.startswith('+') or len(clean_num) < 10:
-                print(f"✖ Invalid format for {student.name}: {clean_num}")
+                print(f"✖ Invalid format: {number}")
                 continue
             
-            # Personalize the message
-            personalized_message = message_template.format(name=student.name)
-            print(f"Sending to {student.name}: '{personalized_message}'")
-
             # Send with automatic retry
-            if not sender.send_message(clean_num, personalized_message):
-                print(f"⚠ Retrying failed message for {student.name}...")
-                sender.send_message(clean_num, personalized_message)  # One automatic retry
+            if not sender.send_message(clean_num, message):
+                print("⚠ Retrying failed message...")
+                sender.send_message(clean_num, message)  # One automatic retry
             
             # Delay between messages
-            if i < len(students):
+            if i < len(phone_numbers):
                 delay = random.randint(min_delay, max_delay)
                 print(f"\nWaiting {delay//60}m {delay%60}s before next...")
                 time.sleep(delay)
@@ -209,28 +191,12 @@ def send_whatsapp_messages(students: List[Student], message_template: str, min_d
 
 # Configuration
 if __name__ == "__main__":
-    # Import necessary components from tasks.py and random module
-    from tasks import get_message_templates
-    import random
-
-    students_to_message = DEFAULT_STUDENTS
-    
-    # Get message configurations from tasks.py
-    templates_config = get_message_templates()
-    first_admission_config = templates_config.get("first_admission")
-    
-    if first_admission_config and first_admission_config.get("message_options"):
-        # Randomly select a message template from the options in tasks.py
-        chosen_template = random.choice(first_admission_config["message_options"])
-        print(f"Using randomly selected template from tasks.py: '{chosen_template}'")
-    else:
-        # Fallback to a default template if tasks.py configuration is not as expected
-        print("Warning: Could not find message_options in tasks.py. Using a default template.")
-        chosen_template = "Hello {name}! This is a default message."
+    numbers = ["+12343807198"]  # Replace with your numbers
+    message = "This message sends automatically"  # Your message
     
     send_whatsapp_messages(
-        students=students_to_message,
-        message_template=chosen_template, 
-        min_delay=20,  # 3 min minimum delay
-        max_delay=40    # 5 min maximum delay
+        phone_numbers=numbers,
+        message=message,
+        min_delay=180,  # 3 min minimum delay
+        max_delay=300    # 5 min maximum delay
     )
